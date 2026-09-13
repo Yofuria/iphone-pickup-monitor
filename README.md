@@ -4,6 +4,8 @@
 
 支持 macOS 和 Linux，需要 Python 3.9+ 以及 Google Chrome、Chromium 或 Microsoft Edge。无桌面的 Linux 服务器建议把 `desktop_notifications` 和 `sound` 都设为 `false`，手机通知仍可通过 Bark 接收。
 
+Linux 服务器可使用仓库中的 `iphone-pickup-monitor.service`。主机安装 Bubblewrap 后，服务通过 `run-monitor-sandboxed` 只读挂载程序和配置，只允许写入 `runtime`，不会挂载用户的 SSH 目录、Docker/LXD socket 或其他主目录内容。Chrome DevTools 只绑定回环地址。不同发行版的 Chrome 安装路径可能需要在脚本中补充只读挂载。
+
 仓库提供 `config.example.json` 作为通用模板。实际使用的 `config.json` 被 Git 忽略，因此可以保留每台电脑自己的城市、门店和型号配置，不会随代码提交到远端。
 
 ## 功能
@@ -160,6 +162,7 @@ python3 -m unittest discover -s tests -v
 - `config.example.json`：通用配置模板。
 - `start-monitor.command`、`stop-monitor.command`、`view-logs.command`：macOS 快捷命令。
 - `configure-bark.command`：安全配置一个或多个 Bark 地址。
+- `run-monitor-sandboxed`、`iphone-pickup-monitor.service`：Linux Bubblewrap 沙箱和用户级 systemd 服务模板。
 - `tests/`：离线测试和脱敏库存夹具。
 
 `.gitignore` 排除了 `.bark-url`、`runtime/`、`.DS_Store`、Python 缓存和本地分发压缩包。上传或分享项目前，仍应检查未跟踪文件和压缩包内容。

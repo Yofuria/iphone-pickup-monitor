@@ -464,6 +464,7 @@ class ChromiumSession:
         chrome = find_chromium()
         self.profile = tempfile.TemporaryDirectory(prefix="apple-monitor-chromium-")
         args = [chrome, "--headless=new", "--remote-debugging-port=0",
+                "--remote-debugging-address=127.0.0.1",
                 "--remote-allow-origins=http://127.0.0.1", "--user-data-dir=" + self.profile.name,
                 "--disable-blink-features=AutomationControlled", "--no-first-run",
                 "--no-default-browser-check", "--disable-background-networking", "--disable-sync",

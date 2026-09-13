@@ -1,0 +1,29 @@
+[Unit]
+Description=Apple Store pickup inventory monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/iphone-pickup-monitor
+ExecStart=%h/iphone-pickup-monitor/run-monitor-sandboxed /usr/bin/python3 %h/iphone-pickup-monitor/monitor.py
+Restart=always
+RestartSec=10
+KillMode=mixed
+TimeoutStopSec=20
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/iphone-pickup-monitor/runtime
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
+StandardOutput=null
+StandardError=journal
+
+[Install]
+WantedBy=default.target
