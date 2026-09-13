@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import queue
 import re
+import shutil
 import signal
 import socket
 import ssl
@@ -223,6 +224,11 @@ def find_chromium():
         ])
     for candidate in candidates:
         if Path(candidate).is_file():
+            return candidate
+    for executable in ("google-chrome", "google-chrome-stable", "chromium",
+                       "chromium-browser", "microsoft-edge", "microsoft-edge-stable"):
+        candidate = shutil.which(executable)
+        if candidate:
             return candidate
     raise QueryError("未找到 Google Chrome 或 Microsoft Edge，库存未知",
                      reset_session=True)

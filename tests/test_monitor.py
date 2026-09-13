@@ -45,6 +45,13 @@ class StockTests(unittest.TestCase):
     def part(self, index=0):
         return self.payload["body"]["stores"][index]["partsAvailability"]["MJT84CH/A"]
 
+    def test_find_chromium_uses_linux_path(self):
+        def which(executable):
+            return "/usr/bin/google-chrome" if executable == "google-chrome" else None
+
+        with patch.object(m.sys, "platform", "linux"), patch.object(m.shutil, "which", side_effect=which):
+            self.assertEqual(m.find_chromium(), "/usr/bin/google-chrome")
+
     def rows(self):
         return m.parse_stock(self.payload, self.config)
 

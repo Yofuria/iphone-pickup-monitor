@@ -2,6 +2,8 @@
 
 一个通过 Apple Store 在线商店查询直营店自提状态的低延迟监控程序。城市、定位、门店、产品型号、轮询间隔、桌面通知和 Bark 推送都由 JSON 配置控制。程序只查询和提醒，不登录、不下单。
 
+支持 macOS 和 Linux，需要 Python 3.9+ 以及 Google Chrome、Chromium 或 Microsoft Edge。无桌面的 Linux 服务器建议把 `desktop_notifications` 和 `sound` 都设为 `false`，手机通知仍可通过 Bark 接收。
+
 仓库提供 `config.example.json` 作为通用模板。实际使用的 `config.json` 被 Git 忽略，因此可以保留每台电脑自己的城市、门店和型号配置，不会随代码提交到远端。
 
 ## 功能
