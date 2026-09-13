@@ -2,7 +2,7 @@
 
 一个通过 Apple Store 在线商店查询直营店自提状态的低延迟监控程序。城市、定位、门店、产品型号、轮询间隔、桌面通知和 Bark 推送都由 JSON 配置控制。程序只查询和提醒，不登录、不下单。
 
-仓库中的 `config.json` 保留当前本机配置：北京 6 家直营店、14 个 iPhone 型号，共 84 个“型号 × 门店”组合。通用化改动不会改变这套监控范围。`config.example.json` 是用于创建其他城市配置的模板。
+仓库提供 `config.example.json` 作为通用模板。实际使用的 `config.json` 被 Git 忽略，因此可以保留每台电脑自己的城市、门店和型号配置，不会随代码提交到远端。
 
 ## 功能
 
@@ -154,7 +154,7 @@ python3 -m unittest discover -s tests -v
 ## 文件与隐私
 
 - `monitor.py`：监控程序。
-- `config.json`：当前实际配置。
+- `config.json`：当前电脑的实际配置，被 Git 忽略。
 - `config.example.json`：通用配置模板。
 - `start-monitor.command`、`stop-monitor.command`、`view-logs.command`：macOS 快捷命令。
 - `configure-bark.command`：安全配置一个或多个 Bark 地址。

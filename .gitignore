@@ -1,4 +1,5 @@
 .bark-url
+config.json
 runtime/
 __pycache__/
 .DS_Store

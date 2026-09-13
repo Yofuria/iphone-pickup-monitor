@@ -11,11 +11,36 @@ from unittest.mock import Mock, patch
 import monitor as m
 
 
+def config_from_payload(payload, include_product):
+    stores = {store["storeNumber"]: store["storeName"]
+              for store in payload["body"]["stores"]}
+    products = []
+    for part_number, availability in payload["body"]["stores"][0]["partsAvailability"].items():
+        regular = availability["messageTypes"]["regular"]
+        product_name = regular["storePickupProductTitle"]
+        if include_product(part_number, product_name):
+            products.append({
+                "product_name": product_name,
+                "part_number": part_number,
+                "product_url": ("https://www.apple.com.cn/shop/buy-iphone/iphone-model/"
+                                + part_number.lower()),
+            })
+    raw = {"location": "100000", "city": "北京", "stores": stores,
+           "interval_seconds": 30, "timeout_seconds": 60,
+           "max_cache_age_seconds": 30, "desktop_notifications": True,
+           "sound": True, "products": products}
+    with tempfile.TemporaryDirectory() as temp:
+        path = Path(temp) / "config.json"
+        path.write_text(json.dumps(raw), encoding="utf-8")
+        return m.load_config(path)
+
+
 class StockTests(unittest.TestCase):
     def setUp(self):
-        self.config = m.load_config(m.ROOT / "config.json")
         fixture = Path(__file__).parent / "fixtures" / "beijing-unavailable.json"
         self.payload = json.loads(fixture.read_text(encoding="utf-8"))
+        self.config = config_from_payload(
+            self.payload, lambda part_number, _: part_number == "MJT84CH/A")
 
     def part(self, index=0):
         return self.payload["body"]["stores"][index]["partsAvailability"]["MJT84CH/A"]
@@ -178,7 +203,6 @@ class StockTests(unittest.TestCase):
 
 class MultiProductTests(unittest.TestCase):
     def setUp(self):
-        self.config = m.load_config(m.ROOT / "config.json")
         self.payload = json.loads((Path(__file__).parent / "fixtures" / "beijing-multi.json").read_text())
         for store in self.payload["body"]["stores"]:
             parts = store["partsAvailability"]
@@ -189,6 +213,8 @@ class MultiProductTests(unittest.TestCase):
             regular["storePickupProductTitle"] = "iPhone 18 Pro 256GB 黑色"
             regular["basePartNumber"] = "MJT74"
             parts["MJT74CH/A"] = black
+        self.config = config_from_payload(
+            self.payload, lambda _, product_name: "Pro Max 2TB" not in product_name)
 
     def rows(self):
         return m.parse_all_stock(self.payload, self.config)
