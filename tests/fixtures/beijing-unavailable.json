@@ -1,0 +1,153 @@
+{
+  "head": {
+    "status": "200"
+  },
+  "body": {
+    "stores": [
+      {
+        "storeNumber": "R448",
+        "storeName": "王府井",
+        "city": "北京",
+        "partsAvailability": {
+          "MJT84CH/A": {
+            "pickupDisplay": "unavailable",
+            "storePickEligible": true,
+            "pickupSearchQuote": "不可取货",
+            "messageTypes": {
+              "regular": {
+                "storeSearchEnabled": true,
+                "storePickupLabel": "取货：",
+                "storeSelectionEnabled": false,
+                "storePickupQuote": "<button type=\"button\" class=\"rf-pickup-quote-overlay-trigger as-retailavailabilitytrigger-infobutton retail-availability-search-trigger as-buttonlink as-buttonlink-inline\" data-ase-overlay=\"buac-overlay\" data-ase-click=\"show\">Apple 王府井</button> 目前无货",
+                "storePickupQuote2_0": "<button type=\"button\" class=\"rf-pickup-quote-overlay-trigger as-retailavailabilitytrigger-infobutton retail-availability-search-trigger as-buttonlink as-buttonlink-inline\" data-ase-overlay=\"buac-overlay\" data-ase-click=\"show\">Apple 王府井</button> 目前无货",
+                "storePickupLinkText": "查看供货情况",
+                "storePickupProductTitle": "iPhone 18 Pro 256GB 银色",
+                "basePartNumber": "MJT84"
+              }
+            }
+          }
+        }
+      },
+      {
+        "storeNumber": "R320",
+        "storeName": "三里屯",
+        "city": "北京",
+        "partsAvailability": {
+          "MJT84CH/A": {
+            "pickupDisplay": "unavailable",
+            "storePickEligible": true,
+            "pickupSearchQuote": "不可取货",
+            "messageTypes": {
+              "regular": {
+                "storeSearchEnabled": true,
+                "storePickupLabel": "取货：",
+                "storeSelectionEnabled": false,
+                "storePickupQuote": "<button type=\"button\" class=\"rf-pickup-quote-overlay-trigger as-retailavailabilitytrigger-infobutton retail-availability-search-trigger as-buttonlink as-buttonlink-inline\" data-ase-overlay=\"buac-overlay\" data-ase-click=\"show\">Apple 三里屯</button> 目前无货",
+                "storePickupQuote2_0": "<button type=\"button\" class=\"rf-pickup-quote-overlay-trigger as-retailavailabilitytrigger-infobutton retail-availability-search-trigger as-buttonlink as-buttonlink-inline\" data-ase-overlay=\"buac-overlay\" data-ase-click=\"show\">Apple 三里屯</button> 目前无货",
+                "storePickupLinkText": "查看供货情况",
+                "storePickupProductTitle": "iPhone 18 Pro 256GB 银色",
+                "basePartNumber": "MJT84"
+              }
+            }
+          }
+        }
+      },
+      {
+        "storeNumber": "R388",
+        "storeName": "西单大悦城",
+        "city": "北京",
+        "partsAvailability": {
+          "MJT84CH/A": {
+            "pickupDisplay": "unavailable",
+            "storePickEligible": true,
+            "pickupSearchQuote": "不可取货",
+            "messageTypes": {
+              "regular": {
+                "storeSearchEnabled": true,
+                "storePickupLabel": "取货：",
+                "storeSelectionEnabled": false,
+                "storePickupQuote": "<button type=\"button\" class=\"rf-pickup-quote-overlay-trigger as-retailavailabilitytrigger-infobutton retail-availability-search-trigger as-buttonlink as-buttonlink-inline\" data-ase-overlay=\"buac-overlay\" data-ase-click=\"show\">Apple 西单大悦城</button> 目前无货",
+                "storePickupQuote2_0": "<button type=\"button\" class=\"rf-pickup-quote-overlay-trigger as-retailavailabilitytrigger-infobutton retail-availability-search-trigger as-buttonlink as-buttonlink-inline\" data-ase-overlay=\"buac-overlay\" data-ase-click=\"show\">Apple 西单大悦城</button> 目前无货",
+                "storePickupLinkText": "查看供货情况",
+                "storePickupProductTitle": "iPhone 18 Pro 256GB 银色",
+                "basePartNumber": "MJT84"
+              }
+            }
+          }
+        }
+      },
+      {
+        "storeNumber": "R479",
+        "storeName": "华贸购物中心",
+        "city": "北京",
+        "partsAvailability": {
+          "MJT84CH/A": {
+            "pickupDisplay": "unavailable",
+            "storePickEligible": true,
+            "pickupSearchQuote": "不可取货",
+            "messageTypes": {
+              "regular": {
+                "storeSearchEnabled": true,
+                "storePickupLabel": "取货：",
+                "storeSelectionEnabled": false,
+                "storePickupQuote": "<button type=\"button\" class=\"rf-pickup-quote-overlay-trigger as-retailavailabilitytrigger-infobutton retail-availability-search-trigger as-buttonlink as-buttonlink-inline\" data-ase-overlay=\"buac-overlay\" data-ase-click=\"show\">Apple 华贸购物中心</button> 目前无货",
+                "storePickupQuote2_0": "<button type=\"button\" class=\"rf-pickup-quote-overlay-trigger as-retailavailabilitytrigger-infobutton retail-availability-search-trigger as-buttonlink as-buttonlink-inline\" data-ase-overlay=\"buac-overlay\" data-ase-click=\"show\">Apple 华贸购物中心</button> 目前无货",
+                "storePickupLinkText": "查看供货情况",
+                "storePickupProductTitle": "iPhone 18 Pro 256GB 银色",
+                "basePartNumber": "MJT84"
+              }
+            }
+          }
+        }
+      },
+      {
+        "storeNumber": "R645",
+        "storeName": "朝阳大悦城",
+        "city": "北京",
+        "partsAvailability": {
+          "MJT84CH/A": {
+            "pickupDisplay": "unavailable",
+            "storePickEligible": true,
+            "pickupSearchQuote": "不可取货",
+            "messageTypes": {
+              "regular": {
+                "storeSearchEnabled": true,
+                "storePickupLabel": "取货：",
+                "storeSelectionEnabled": false,
+                "storePickupQuote": "<button type=\"button\" class=\"rf-pickup-quote-overlay-trigger as-retailavailabilitytrigger-infobutton retail-availability-search-trigger as-buttonlink as-buttonlink-inline\" data-ase-overlay=\"buac-overlay\" data-ase-click=\"show\">Apple 朝阳大悦城</button> 目前无货",
+                "storePickupQuote2_0": "<button type=\"button\" class=\"rf-pickup-quote-overlay-trigger as-retailavailabilitytrigger-infobutton retail-availability-search-trigger as-buttonlink as-buttonlink-inline\" data-ase-overlay=\"buac-overlay\" data-ase-click=\"show\">Apple 朝阳大悦城</button> 目前无货",
+                "storePickupLinkText": "查看供货情况",
+                "storePickupProductTitle": "iPhone 18 Pro 256GB 银色",
+                "basePartNumber": "MJT84"
+              }
+            }
+          }
+        }
+      },
+      {
+        "storeNumber": "R792",
+        "storeName": "北京荟聚",
+        "city": "北京",
+        "partsAvailability": {
+          "MJT84CH/A": {
+            "pickupDisplay": "unavailable",
+            "storePickEligible": true,
+            "pickupSearchQuote": "不可取货",
+            "messageTypes": {
+              "regular": {
+                "storeSearchEnabled": true,
+                "storePickupLabel": "取货：",
+                "storeSelectionEnabled": false,
+                "storePickupQuote": "<button type=\"button\" class=\"rf-pickup-quote-overlay-trigger as-retailavailabilitytrigger-infobutton retail-availability-search-trigger as-buttonlink as-buttonlink-inline\" data-ase-overlay=\"buac-overlay\" data-ase-click=\"show\">Apple 北京荟聚</button> 目前无货",
+                "storePickupQuote2_0": "<button type=\"button\" class=\"rf-pickup-quote-overlay-trigger as-retailavailabilitytrigger-infobutton retail-availability-search-trigger as-buttonlink as-buttonlink-inline\" data-ase-overlay=\"buac-overlay\" data-ase-click=\"show\">Apple 北京荟聚</button> 目前无货",
+                "storePickupLinkText": "查看供货情况",
+                "storePickupProductTitle": "iPhone 18 Pro 256GB 银色",
+                "basePartNumber": "MJT84"
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

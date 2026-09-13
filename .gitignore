@@ -1,0 +1,7 @@
+.bark-url
+runtime/
+__pycache__/
+.DS_Store
+*.pyc
+.pytest_cache/
+iphone-stock-monitor.zip
