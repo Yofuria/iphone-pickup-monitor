@@ -1,78 +1,171 @@
-# 北京 iPhone 自提监控
+# Apple Store 自提库存监控
 
-已配置 **iPhone 18 Pro 256GB 银色与黑色＋12 款 iPhone 18 Pro Max**，监控北京 6 家苹果直营店：王府井、三里屯、西单大悦城、华贸购物中心、朝阳大悦城、北京荟聚。
+一个通过 Apple Store 在线商店查询直营店自提状态的低延迟监控程序。城市、定位、门店、产品型号、轮询间隔、桌面通知和 Bark 推送都由 JSON 配置控制。程序只查询和提醒，不登录、不下单。
 
-Pro Max 覆盖黑色、银色、勃艮第酒红色、冰川蓝色，每种颜色均监控 256GB、512GB、1TB；2TB 已排除。总计 **14 个型号 × 6 家门店 = 84 个库存组合**。产品编号与名称已通过苹果商品页及实际自提响应核对，完整列表位于 `config.json` 的 `products` 数组中。
+仓库中的 `config.json` 保留当前本机配置：北京 6 家直营店、14 个 iPhone 型号，共 84 个“型号 × 门店”组合。通用化改动不会改变这套监控范围。`config.example.json` 是用于创建其他城市配置的模板。
 
-程序使用独立的无头 Google Chrome 会话查询苹果官网：先打开正式购买页完成风控握手，再从同一会话查询库存。每 30 秒开始一轮，把 14 个产品编号合并后依次查询六家店；每两次门店请求至少间隔 2 秒。可自提时发出电脑声音、桌面通知和已配置的 Bark 手机推送。
+## 功能
 
-程序使用 Python 3.9+ 标准库，无需安装 pip 依赖；运行时需要 `/Applications` 中的 Google Chrome 或 Microsoft Edge。临时浏览器使用全新资料目录，不读取日常浏览器的 Cookie、账号或历史，结束或重建会话时自动删除。双击启动适用于 macOS；当前版本不支持 Windows。
+- 一个实例可监控任意一个城市、1～128 家直营店和 1～64 个产品型号。
+- 每家门店每轮只发送一个合并请求，不会为每个“型号 × 门店”组合单独请求。
+- 仅在 `pickupDisplay=available` 且 `storePickEligible=true` 时判定为可自提。
+- 每个“产品编号 × 门店”独立去重；持续有货不会重复提醒，明确无货后再次有货会重新提醒。
+- 通过独立的无头 Chrome 会话完成 Apple 页面握手，自动处理 403、541、限流、缓存过期和退避重试。
+- 支持电脑声音、macOS 桌面通知，以及最多 8 台设备的 Bark 推送。
+- Bark 推送使用 Apple 官方图标；发送有货和“监控已恢复”，不发送接口异常或部分库存未知。
+- 状态和日志写入 `runtime/`，Bark 地址单独保存在被 Git 忽略的 `.bark-url`。
 
-双击 **view-logs.command** 查看实时输出，双击 **stop-monitor.command** 停止当前服务。关机后不会自动重启，之后可以使用 **start-monitor.command** 启动。
+## 环境要求
 
-## Mac 开始使用
+- macOS
+- Python 3.9 或更高版本
+- `/Applications` 中安装 Google Chrome 或 Microsoft Edge
+- 查询期间电脑保持开机、联网和开盖
 
-1. 在 iPhone 安装 **Bark**，允许通知；按需要允许“时效性通知”。
-2. 双击同目录的 **configure-bark.command**，输入 Bark 基础推送地址，例如 `https://api.day.app/你的Key`。已有手机配置时，新地址会自动追加，不会覆盖；也可以将多个地址用英文逗号分隔后一次粘贴。如果从 Bark 复制的是完整测试链接，请去掉 Key 后面的标题/正文。输入不会显示，按回车即可；随后自动向所有已配置手机发出测试通知。
-3. 确认电脑和手机都收到测试通知，再双击 **start-monitor.command**。
-4. 保持电脑开机、联网、开盖。按 **Ctrl+C** 停止。关闭终端窗口也会终止监控。
+程序只使用 Python 标准库，无需安装 pip 依赖。临时浏览器使用全新资料目录，不读取日常浏览器的 Cookie、账号或历史，结束或重建会话时会自动删除。
 
-启动文件会用 macOS `caffeinate` 防止闲置睡眠，不能阻止关机、合盖休眠或断网。通知被系统静音/专注模式屏蔽时，服务接收成功也不代表通知会显示；请以测试通知的实际效果为准。如果无法双击 `.command`，可在终端中运行下面的命令。
+## 快速开始
+
+1. 复制 `config.example.json` 为 `config.json`，或直接修改已有的 `config.json`。
+2. 运行离线配置校验：
+
+   ```sh
+   python3 monitor.py --validate-config
+   ```
+
+3. 如需手机推送，在 iPhone 或 iPad 安装 Bark，然后双击 `configure-bark.command`。已有配置时，新地址会追加；多个地址也可以用英文逗号分隔后一次输入。
+4. 双击 `start-monitor.command` 启动监控。按 `Ctrl+C` 停止。
+
+也可以直接在终端运行：
 
 ```sh
-cd ~/Desktop/Apple
+cd /path/to/iphone-pickup-monitor
+python3 monitor.py --validate-config
 python3 monitor.py --setup-bark
-# 已有配置时追加一台手机
-python3 monitor.py --add-bark
 python3 monitor.py --test-notify
 caffeinate -i python3 monitor.py
 ```
 
-Bark 地址每行一个，保存在本目录隐藏文件 `.bark-url`，只允许当前用户读写，不写入日志。最多支持 8 台设备；也可用环境变量 `BARK_URLS` 提供英文逗号分隔的多个地址，单设备环境变量 `BARK_URL` 仍兼容。修改 Bark 地址后需重启监控。不要把 `.bark-url` 发给他人。未配置 Bark 时，程序会明确提示并只使用电脑提醒。
+已有 Bark 配置时追加一台设备：
+
+```sh
+python3 monitor.py --add-bark
+```
+
+## 配置城市、门店和型号
+
+默认读取同目录的 `config.json`。也可以指定其他文件：
+
+```sh
+python3 monitor.py --config /path/to/my-config.json --validate-config
+python3 monitor.py --config /path/to/my-config.json
+```
+
+核心结构如下：
+
+```json
+{
+  "location": "200000",
+  "city": "上海",
+  "stores": {
+    "STORE_ID_1": "门店名称一",
+    "STORE_ID_2": "门店名称二"
+  },
+  "interval_seconds": 30,
+  "timeout_seconds": 60,
+  "max_cache_age_seconds": 30,
+  "desktop_notifications": true,
+  "sound": true,
+  "alert_title": "上海 Apple Store 自提有货",
+  "notification_group": "上海 Apple Store 自提",
+  "products": [
+    {
+      "product_name": "显示在通知中的型号、容量和颜色",
+      "part_number": "XXXXXX/A",
+      "product_url": "https://www.apple.com.cn/shop/buy-iphone/iphone-model/xxxxxx/a"
+    }
+  ]
+}
+```
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `location` | 是 | Apple 自提查询使用的位置，可填写当地邮编或站点支持的位置文本。 |
+| `city` | 是 | Apple 响应中的城市名称。程序会拒绝把其他城市的门店数据当成目标结果。 |
+| `stores` | 是 | 门店编号到显示名称的映射；只监控这里列出的门店。支持 1～128 家。 |
+| `products` | 是 | 产品数组。每项包含名称、完整产品编号和对应 Apple 商品页。支持 1～64 项。 |
+| `interval_seconds` | 否 | 完整轮次的开始间隔，默认及最小值为 30 秒，最大 3600 秒。 |
+| `timeout_seconds` | 否 | 单次网络操作超时，默认 60 秒，可设为 1～60 秒。 |
+| `max_cache_age_seconds` | 否 | 可接受的响应缓存年龄，默认 30 秒，可设为 0～300 秒。 |
+| `desktop_notifications` | 否 | 是否显示桌面通知，默认 `true`。 |
+| `sound` | 否 | 是否播放电脑提示音，默认 `true`。 |
+| `alert_title` | 否 | 有货通知标题；默认根据 `city` 生成。 |
+| `notification_group` | 否 | Bark 通知分组；默认根据 `city` 生成。 |
+
+`product_url` 必须来自 `https://www.apple.com/` 或 `https://www.apple.com.cn/`，同一配置中的商品必须属于同一个区域站点。程序会从第一个商品链接自动推导 Apple Store 域名和浏览器握手页面。
+
+产品编号通常可从 Apple 商品页地址和自提查询请求中核对。门店编号可在 Apple 商品页执行一次自提搜索后，从浏览器开发者工具的 `pickup-message` 响应中查看。配置完成后先运行 `--validate-config`；它只校验结构并显示城市、门店数、型号数和组合数，不请求 Apple 接口。
+
+一个运行实例对应一个城市配置。如果需要同时监控多个城市，建议复制项目目录，为每个城市使用独立的 `config.json`、`runtime/` 和进程。
+
+## Bark 推送
+
+Bark 基础地址格式为 `https://api.day.app/你的Key`，也支持 HTTPS 自建服务。不要把 Key 写进 `config.json`、README 或 Git。
+
+地址每行一个，保存在 `.bark-url`；文件权限仅允许当前用户读写。也可以使用环境变量 `BARK_URLS` 提供英文逗号分隔的多个地址，单设备环境变量 `BARK_URL` 仍兼容。修改地址后需要重启正在运行的监控。
+
+同一轮中，同型号有货的多家门店会合并为一条通知，不同型号分开发送。通知包含型号、门店、自提说明和检测时间，点击后打开对应 Apple 商品页。每台 Bark 设备使用独立发送队列，一台失败不会阻塞其他设备或库存查询。
 
 ## 延迟与可靠性
 
-- 默认每 **30 秒**开始一轮，这是允许的最小设置。六家门店依次查询，一轮实测约 13.5 秒；完成后保持 Chrome 会话，等待到下一轮起始时间。
-- 每家门店只发一个请求，其中合并全部 14 个产品编号；不会为 84 个组合分别发送请求。电脑通知和 Bark 在独立线程中发送，推送重试不会拖慢库存查询。
-- 30 秒轮次下，接口持续正常时，库存变化到下一轮开始的等待约 0～30 秒，之后还要加上该门店在轮次中的排队、查询和通知送达时间。苹果自身更新和缓存延迟不可控，因此这不是端到端时延保证。
-- 苹果接口没有向本程序提供库存事件推送，查询得到的是“可否下单自提”，并非库存件数。`no-cache` 是请求重验证意图，不能保证苹果没有内部缓存；只在返回 `Age` 大于配置阈值时能主动拒绝已知过期响应。
-- 仅明确的目标产品 `pickupDisplay=available` 且 `storePickEligible=true` 才提醒。门店本身提供取货服务不等于这款手机有货。
-- 每个“产品编号＋门店”独立判断补货。首次发现有货提醒一次；持续有货不重复；明确无货后再次有货才重新提醒。重启后若当前有货会再次提醒。断网/缺少门店/缺少某个型号/未知字段不会被当作无货。
-- HTTP 403 或 541 会标为“库存未知”，销毁当前 Chrome 进程与临时资料，下轮创建全新会话并重新完成风控握手。查询失败按 30、60、120、240、300 秒退避；若服务器要求更长 `Retry-After`，遵从该等待时间。恢复后自动继续 30 秒轮次。
-- 单个门店数据缺失会显示“未知”，其他门店仍正常判断；不会用“北京全部无货”掩盖不完整响应。
-- 同一轮同型号有货的门店合并为一条通知，不同型号分开发送。Bark 推送使用 Apple 官方图标；发送有货提醒和“库存监控已恢复”，不发送 541、断网、部分库存未知等异常提醒。异常仍会写入日志并保留电脑通知。有货推送包含型号、容量、颜色、门店、检测时间，点击通知会打开对应型号的苹果购买页。Bark 失败最多重试 3 次，超过 90 秒未开始发送的提醒丢弃。重试可能出现重复送达；提示中的检测时间用于判断新鲜度。库存变化可能很快，请以结账时显示为准。
+- 默认每 30 秒开始一轮。轮次内各门店依次查询，每两次门店请求至少间隔 2 秒。
+- 实际提醒延迟还包括目标门店在轮次中的顺序、Apple 的库存更新与缓存，以及通知服务送达时间。
+- Apple 没有向程序提供库存事件推送，查询结果表示“当前可否下单自提”，不表示库存件数。
+- HTTP 403 或 541 会标为库存未知，并销毁当前 Chrome 会话。失败按 30、60、120、240、300 秒退避；服务器提供更长 `Retry-After` 时会遵从。
+- 单个门店或型号缺失会标为未知，其他组合仍正常判断。未知状态不会被当作无货或有货。
+- Bark 失败最多重试 3 次；超过 90 秒仍未开始的旧提醒会丢弃，避免发送过时库存。
 
-这份程序只查询和提醒，不登录、不下单。苹果网页使用的查询接口并非稳定的开发者 API，未来字段或访问策略变化时需要维护；程序不会将这类变化默认为无货。
+## 状态、日志和命令
 
-## 查看运行状态
-
-日志在状态变化时输出各型号统计，正常情况下每分钟输出一次心跳。每个型号会显示可自提、不可自提、未知的门店数量，有货或异常门店会单独列出。`runtime/monitor.log` 保存日志并轮换，单个文件最大约 2MB，保留两份旧文件；后台启动的标准输出在 `runtime/launcher.log`。
-
-最新状态写入 `runtime/status.json`，包含 `health`（`ok` / `partial` / `error`）、进程 PID、型号数、组合数、检查时间、最近完整成功时间、请求耗时和各组合状态。`stores` 的键为 `门店编号|产品编号`，例如 `R320|MJY74CH/A`。单独一个型号缺失不会影响其他组合判断。程序退出后该文件不会更新，使用它时必须同时检查时间，不能把旧文件当成正在运行。
+`runtime/status.json` 保存最新健康状态、城市、门店数、型号数、组合数、进程 PID、检查时间、请求耗时、缓存年龄和各组合结果。`runtime/monitor.log` 保存轮换日志，`runtime/launcher.log` 保存后台启动输出。
 
 ```sh
-# 只查一轮，不发通知
+# 离线校验配置
+python3 monitor.py --validate-config
+
+# 查询一轮，不发送通知
 python3 monitor.py --once --silent
 
-# 连查三轮，用于检查连接和延迟
+# 连续查询三轮
 python3 monitor.py --count 3 --silent
 
-# 本地逻辑测试，不请求官网也不发送真实通知
-python3 -m unittest discover -s tests -v
+# 测试电脑和所有 Bark 设备
+python3 monitor.py --test-notify
 
-# 停止本目录监控
+# 停止本目录中的监控
 python3 monitor.py --stop
+
+# 运行离线测试
+python3 -m unittest discover -s tests -v
 ```
 
-程序有单实例锁，同一份目录不能同时启动两份监控。程序没有安装开机自启服务。若需要手动重启，先停止现有进程再双击启动文件；Bark 配置无需改动。重启会遵守 `status.json` 中尚未结束的接口退避等待。
+项目有单实例锁，同一目录不能同时运行两个监控进程。`start-monitor.command` 使用 `caffeinate` 防止电脑因闲置睡眠，但不能阻止关机、合盖休眠或断网。
+
+## 文件与隐私
+
+- `monitor.py`：监控程序。
+- `config.json`：当前实际配置。
+- `config.example.json`：通用配置模板。
+- `start-monitor.command`、`stop-monitor.command`、`view-logs.command`：macOS 快捷命令。
+- `configure-bark.command`：安全配置一个或多个 Bark 地址。
+- `tests/`：离线测试和脱敏库存夹具。
+
+`.gitignore` 排除了 `.bark-url`、`runtime/`、`.DS_Store`、Python 缓存和本地分发压缩包。上传或分享项目前，仍应检查未跟踪文件和压缩包内容。
 
 ## 数据来源与验证
 
-- [苹果目标商品页（银色）](https://www.apple.com.cn/shop/buy-iphone/iphone-18-pro/mjt84ch/a)和[黑色](https://www.apple.com.cn/shop/buy-iphone/iphone-18-pro/mjt74ch/a)：核对准确型号。
-- [苹果中国大陆直营店列表](https://www.apple.com.cn/retail/storelist/)：核对北京六家直营店。
-- [苹果自提查询](https://www.apple.com.cn/shop/retail/pickup-message?parts.0=MJT84CH%2FA&location=100000)：本程序的只读数据来源。
-- [Bark 官方推送文档](https://github.com/Finb/Bark/blob/master/docs/en-us/tutorial.md)：JSON POST、时效性通知和跳转链接。
+- [Apple Store 在线商店](https://www.apple.com.cn/shop/buy-iphone)
+- [Apple 中国大陆直营店列表](https://www.apple.com.cn/retail/storelist/)
+- [Bark 官方推送文档](https://github.com/Finb/Bark/blob/master/docs/en-us/tutorial.md)
 
-本地测试夹具来自 2026-09-14 的实际自提响应，仅保留库存判断需要的字段。单元测试覆盖无货、有货、缺失门店、产品不匹配、去重、未知状态、业务错误、HTTP 限流与缓存过期等场景；Bark 使用模拟服务确认请求格式。Bark 真机送达仍需配置你自己的地址后运行测试通知。
-
-验证结果：28 项离线测试通过，包括 84 个组合解析、跨门店/型号去重、单型号缺失、通知链接、多设备地址解析、通知渠道过滤、Chrome 请求参数、541 会话重建与合并请求。2026-09-14 真实联调中，Chrome 成功取得 `shld_bt_ck` 和 `as_atb` 风控 Cookie；首次会话被 541 拦截，等待 35 秒并重建后，六家店的目标组合全部返回明确状态，未知项为 0，完整一轮耗时约 13.5 秒。这是短时间样本，不能保证长期服务或手机通知延迟。
+离线测试覆盖配置校验、组合解析、跨门店和型号去重、未知状态、业务错误、HTTP 限流、缓存过期、通知链接、多 Bark 设备、渠道过滤、Chrome 请求参数、541 会话重建和合并请求。Bark 真机送达仍需使用自己的地址运行测试通知。

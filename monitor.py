@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apple Beijing pickup monitor. Python 3.9+, macOS/Linux, standard library only."""
+"""Configurable Apple Store pickup monitor. Python 3.9+, standard library only."""
 import argparse
 import base64
 import datetime as dt
@@ -31,6 +31,7 @@ import urllib.parse
 ROOT = Path(__file__).resolve().parent
 ENDPOINT = "/shop/retail/pickup-message"
 BARK_ICON_URL = "https://www.apple.com/apple-touch-icon.png"
+APPLE_STOREFRONTS = {"www.apple.com", "www.apple.com.cn"}
 STOP = threading.Event()
 PRINT_LOCK = threading.Lock()
 LOGGER = logging.getLogger("pickup-monitor")
@@ -79,33 +80,57 @@ def load_config(path):
     for key in ("location", "city"):
         if not isinstance(config.get(key), str) or not config[key].strip():
             raise ValueError("配置缺少 " + key)
+        config[key] = config[key].strip()
     products = config.get("products")
     if products is None:
         products = [{key: config.get(key) for key in
                      ("product_name", "part_number", "product_url")}]
-    if not isinstance(products, list) or not 1 <= len(products) <= 32:
-        raise ValueError("products 必须包含 1～32 个型号")
+    if not isinstance(products, list) or not 1 <= len(products) <= 64:
+        raise ValueError("products 必须包含 1～64 个型号")
     seen = set()
+    storefronts = set()
     for product in products:
         if not isinstance(product, dict):
             raise ValueError("products 中每个型号必须为对象")
         for key in ("product_name", "part_number", "product_url"):
             if not isinstance(product.get(key), str) or not product[key].strip():
                 raise ValueError("型号配置缺少 " + key)
+            product[key] = product[key].strip()
+        product["part_number"] = product["part_number"].upper()
         if not re.fullmatch(r"[A-Z0-9]+/A", product["part_number"]):
             raise ValueError("part_number 应为完整苹果产品编号，例如 MJT84CH/A")
         if product["part_number"] in seen:
             raise ValueError("products 包含重复的产品编号")
         seen.add(product["part_number"])
         url = urllib.parse.urlsplit(product["product_url"])
-        if url.scheme != "https" or url.netloc != "www.apple.com.cn":
-            raise ValueError("商品链接必须来自苹果中国大陆 HTTPS 官网")
+        if (url.scheme != "https" or url.hostname not in APPLE_STOREFRONTS
+                or url.username or url.password or url.port):
+            raise ValueError("商品链接必须来自 Apple HTTPS 官网")
+        storefronts.add("%s://%s" % (url.scheme, url.netloc))
+    if len(storefronts) != 1:
+        raise ValueError("所有商品链接必须来自同一个 Apple Store 区域站点")
     config["products"] = products
+    config["storefront_url"] = storefronts.pop()
     # Retain normalized first-product fields for legacy single-product configs.
     config.update({key: products[0][key] for key in
                    ("product_name", "part_number", "product_url")})
-    if not isinstance(config.get("stores"), dict) or not config["stores"]:
+    if not isinstance(config.get("stores"), dict) or not 1 <= len(config["stores"]) <= 128:
         raise ValueError("stores 必须包含需要监控的门店编号和名称")
+    for store_id, store_name in config["stores"].items():
+        if (not isinstance(store_id, str) or not store_id.strip()
+                or not isinstance(store_name, str) or not store_name.strip()):
+            raise ValueError("stores 中的门店编号和名称必须是非空字符串")
+    for key, default in (("desktop_notifications", True), ("sound", True)):
+        value = config.get(key, default)
+        if not isinstance(value, bool):
+            raise ValueError(key + " 必须是 true 或 false")
+        config[key] = value
+    for key, default in (("alert_title", config["city"] + " Apple Store 自提有货"),
+                         ("notification_group", config["city"] + " Apple Store 自提")):
+        value = config.get(key, default)
+        if not isinstance(value, str) or not value.strip() or len(value.strip()) > 80:
+            raise ValueError(key + " 必须是 1～80 个字符")
+        config[key] = value.strip()
     for key, low, high in (("interval_seconds", 30, 3600),
                            ("timeout_seconds", 1, 60),
                            ("max_cache_age_seconds", 0, 300)):
@@ -178,7 +203,7 @@ def parse_all_stock(payload, config):
     return result
 
 
-def stock_alerts(rows, checked_at):
+def stock_alerts(rows, checked_at, config):
     """Group stores for the same SKU; each alert links to that exact product."""
     groups = {}
     for row in rows:
@@ -186,7 +211,7 @@ def stock_alerts(rows, checked_at):
     for group in groups.values():
         body = group[0]["product_name"] + "\n" + "\n".join(
             row["name"] + "：" + row["quote"] for row in group)
-        yield "北京 Apple 自提有货", body + "\n检测时间：" + checked_at, group[0]["product_url"]
+        yield config["alert_title"], body + "\n检测时间：" + checked_at, group[0]["product_url"]
 
 
 def find_chromium():
@@ -331,7 +356,7 @@ def browser_inventory_request(config, store_id):
     pairs.extend(("parts.%d" % index, product["part_number"])
                  for index, product in enumerate(products_for(config)))
     pairs.append(("store", store_id))
-    return {"url": "https://www.apple.com.cn" + ENDPOINT,
+    return {"url": config["storefront_url"] + ENDPOINT,
             "pairs": pairs, "max_bytes": 4 * 1024 * 1024}
 
 
@@ -462,7 +487,7 @@ class ChromiumSession:
     def ensure_ready(self):
         if self.ready:
             return
-        self.command("Page.navigate", {"url": "https://www.apple.com.cn/shop/buy-iphone/iphone-18-pro"})
+        self.command("Page.navigate", {"url": self.config["products"][0]["product_url"]})
         deadline = time.monotonic() + self.READY_TIMEOUT
         expression = "JSON.stringify({readyState:document.readyState,cookies:document.cookie.split(';').map(x=>x.trim().split('=')[0]).filter(Boolean)})"
         while time.monotonic() < deadline and not STOP.is_set():
@@ -595,12 +620,12 @@ def bark_urls():
     return parse_bark_urls(value)
 
 
-def send_bark(url, title, body, product_url):
+def send_bark(url, title, body, product_url, group="Apple Store 自提"):
     parsed = urllib.parse.urlsplit(url)
     connection = http.client.HTTPSConnection(parsed.hostname, parsed.port, timeout=6,
                                               context=ssl.create_default_context())
     payload = json.dumps({"title": title, "body": body, "url": product_url,
-                          "group": "iPhone北京自提", "level": "timeSensitive",
+                          "group": group, "level": "timeSensitive",
                           "sound": "alarm", "icon": BARK_ICON_URL},
                          ensure_ascii=False).encode("utf-8")
     try:
@@ -644,7 +669,8 @@ class Notifications:
             self.add("电脑", lambda *args: send_desktop(config, *args))
         for index, bark in enumerate(barks, 1):
             self.add("Bark %s" % index,
-                     lambda *args, bark=bark: send_bark(bark, *args))
+                     lambda *args, bark=bark: send_bark(
+                         bark, *args, group=config["notification_group"]))
 
     def add(self, name, sender):
         jobs = queue.Queue(maxsize=100)
@@ -775,8 +801,9 @@ def monitor(config, once=False, silent=False, count=None):
     loops = 0
     exit_code = 0
     product_count = len(products_for(config))
-    log("监控 %s 个型号；%s 家北京门店；%s 个组合；Chrome 完整轮次间隔 %s 秒" %
-        (product_count, len(config["stores"]), product_count * len(config["stores"]),
+    log("监控 %s 个型号；%s 家%s门店；%s 个组合；Chrome 完整轮次间隔 %s 秒" %
+        (product_count, len(config["stores"]), config["city"],
+         product_count * len(config["stores"]),
          config["interval_seconds"]))
     try:
         # A restart must not discard an active server/API cooldown.
@@ -799,7 +826,8 @@ def monitor(config, once=False, silent=False, count=None):
                 unknown = [r for r in rows.values() if r["available"] is None]
                 new_health = "partial" if unknown else "ok"
                 if health in ("error", "partial") and new_health == "ok" and notify:
-                    notify.send("库存监控已恢复", "北京全部 %s 个型号/门店组合均已成功查询。" % len(rows))
+                    notify.send("库存监控已恢复", "%s全部 %s 个型号/门店组合均已成功查询。" %
+                                (config["city"], len(rows)))
                 if new_health == "partial" and health != "partial" and notify:
                     notify.send("部分库存未知", "%s 个型号/门店组合未知；详情见运行日志。" % len(unknown),
                                 include_bark=False)
@@ -808,11 +836,13 @@ def monitor(config, once=False, silent=False, count=None):
                 last_success = checked_at if not unknown else last_success
                 alerts = changes.update(rows)
                 if alerts and notify:
-                    for title, body, url in stock_alerts(alerts, checked_at):
+                    for title, body, url in stock_alerts(alerts, checked_at, config):
                         notify.send(title, body, url)
                 write_status(runtime / "status.json", {
                     "health": health, "checked_at": checked_at, "last_success": last_success,
-                    "pid": os.getpid(), "product_count": product_count, "combination_count": len(rows),
+                    "pid": os.getpid(), "city": config["city"],
+                    "store_count": len(config["stores"]), "product_count": product_count,
+                    "combination_count": len(rows),
                     "query_backend": "chromium", "request_ms": elapsed_ms,
                     "cache_age_seconds": age, "stores": rows})
                 if rows != previous_rows or time.monotonic() - heartbeat >= 60 or once or count:
@@ -837,7 +867,8 @@ def monitor(config, once=False, silent=False, count=None):
                 log("%s；%.1f 秒后重试" % (exc, delay))
                 write_status(runtime / "status.json", {
                     "health": "error", "checked_at": checked_at, "last_success": last_success,
-                    "pid": os.getpid(), "product_count": product_count,
+                    "pid": os.getpid(), "city": config["city"],
+                    "store_count": len(config["stores"]), "product_count": product_count,
                     "query_backend": "chromium",
                     "error": str(exc), "retry_seconds": delay, "stores": {}})
                 if health != "error" and notify:
@@ -862,7 +893,7 @@ def monitor(config, once=False, silent=False, count=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="北京 iPhone 18 Pro / Pro Max 多机型自提库存监控")
+    parser = argparse.ArgumentParser(description="可配置的 Apple Store 任意城市、多门店、多型号自提库存监控")
     parser.add_argument("--config", type=Path, default=ROOT / "config.json")
     parser.add_argument("--once", action="store_true", help="查询一轮后退出")
     parser.add_argument("--count", type=int, help="查询指定轮数后退出（联调使用）")
@@ -870,6 +901,7 @@ def main():
     parser.add_argument("--setup-bark", action="store_true", help="本机安全保存 Bark 推送地址")
     parser.add_argument("--add-bark", action="store_true", help="追加 Bark 推送地址，不覆盖已有设备")
     parser.add_argument("--test-notify", action="store_true", help="向已配置的电脑/Bark 发送测试提醒")
+    parser.add_argument("--validate-config", action="store_true", help="离线校验配置并显示监控摘要")
     parser.add_argument("--stop", action="store_true", help="请求停止本目录的新版监控服务")
     args = parser.parse_args()
     if args.count is not None and args.count < 1:
@@ -893,12 +925,19 @@ def main():
             log("Bark 配置已保存 %s 台设备。可运行 --test-notify 测试。" % len(values))
             return 0
         config = load_config(args.config)
+        if args.validate_config:
+            log("配置有效：%s，%s 家门店，%s 个型号，%s 个组合。" %
+                (config["city"], len(config["stores"]), len(products_for(config)),
+                 len(config["stores"]) * len(products_for(config))))
+            return 0
         if args.test_notify:
             barks = bark_urls()
             if not barks:
                 log("Bark 尚未配置，本次只测试电脑提醒。")
             notification = Notifications(config, barks)
-            notification.send("自提监控测试（不是有货提醒）", "北京 %s 个型号的库存通知测试" % len(products_for(config)))
+            notification.send("自提监控测试（不是有货提醒）",
+                              "%s %s 个型号的库存通知测试" %
+                              (config["city"], len(products_for(config))))
             return 0 if notification.finish() else 2
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, lambda *_: STOP.set())

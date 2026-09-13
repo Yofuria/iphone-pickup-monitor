@@ -138,12 +138,14 @@ class StockTests(unittest.TestCase):
         response = constructor.return_value.getresponse.return_value
         response.status = 200
         response.read.return_value = b'{"code":200}'
-        m.send_bark("https://api.day.app/example", "标题", "正文", "https://www.apple.com.cn")
+        m.send_bark("https://api.day.app/example", "标题", "正文",
+                    "https://www.apple.com.cn", "上海自提")
         request = constructor.return_value.request.call_args
         self.assertEqual(request.args[:2], ("POST", "/example"))
         data = json.loads(request.kwargs["body"])
         self.assertEqual(data["title"], "标题")
         self.assertEqual(data["level"], "timeSensitive")
+        self.assertEqual(data["group"], "上海自提")
         self.assertEqual(data["icon"], "https://www.apple.com/apple-touch-icon.png")
         response.read.return_value = b'{"code":400}'
         with self.assertRaises(RuntimeError):
@@ -228,11 +230,12 @@ class MultiProductTests(unittest.TestCase):
     def test_notifications_group_same_sku_with_matching_link(self):
         rows = self.rows()
         selected = [rows["R448|MJY74CH/A"], rows["R320|MJY74CH/A"], rows["R448|MJY64CH/A"]]
-        alerts = list(m.stock_alerts(selected, "测试时间"))
+        alerts = list(m.stock_alerts(selected, "测试时间", self.config))
         self.assertEqual(len(alerts), 2)
         self.assertIn("王府井", alerts[0][1])
         self.assertIn("三里屯", alerts[0][1])
         self.assertIn("256GB 银色", alerts[0][1])
+        self.assertEqual(alerts[0][0], "北京 Apple Store 自提有货")
         self.assertTrue(alerts[0][2].endswith("/mjy74ch/a"))
         self.assertIn("256GB 黑色", alerts[1][1])
         self.assertTrue(alerts[1][2].endswith("/mjy64ch/a"))
@@ -265,6 +268,29 @@ class MultiProductTests(unittest.TestCase):
                 path.write_text(json.dumps({**self.config, "products": products}))
                 with self.assertRaises(ValueError):
                     m.load_config(path)
+
+    def test_config_drives_city_stores_storefront_and_notification_names(self):
+        product = dict(self.config["products"][0])
+        product["product_url"] = "https://www.apple.com/shop/buy-iphone/example-product"
+        custom = {key: value for key, value in self.config.items()
+                  if key not in ("storefront_url", "alert_title", "notification_group")}
+        custom.update({"city": "上海", "location": "200000",
+                       "stores": {"R999": "示例门店"}, "products": [product]})
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "config.json"
+            path.write_text(json.dumps(custom))
+            loaded = m.load_config(path)
+        self.assertEqual(loaded["storefront_url"], "https://www.apple.com")
+        self.assertEqual(loaded["alert_title"], "上海 Apple Store 自提有货")
+        self.assertEqual(loaded["notification_group"], "上海 Apple Store 自提")
+        request = m.browser_inventory_request(loaded, "R999")
+        self.assertEqual(request["url"], "https://www.apple.com/shop/retail/pickup-message")
+
+    def test_example_config_is_structurally_valid(self):
+        example = m.load_config(m.ROOT / "config.example.json")
+        self.assertEqual(example["city"], "上海")
+        self.assertEqual(len(example["stores"]), 1)
+        self.assertEqual(len(example["products"]), 1)
 
     def test_legacy_single_config_still_works(self):
         legacy = {k: v for k, v in self.config.items() if k != "products"}

@@ -1,0 +1,21 @@
+{
+  "location": "200000",
+  "city": "上海",
+  "stores": {
+    "STORE_ID": "示例直营店"
+  },
+  "interval_seconds": 30,
+  "timeout_seconds": 60,
+  "max_cache_age_seconds": 30,
+  "desktop_notifications": true,
+  "sound": true,
+  "alert_title": "上海 Apple Store 自提有货",
+  "notification_group": "上海 Apple Store 自提",
+  "products": [
+    {
+      "product_name": "示例 iPhone 型号、容量和颜色",
+      "part_number": "XXXXXX/A",
+      "product_url": "https://www.apple.com.cn/shop/buy-iphone/iphone-model/xxxxxx/a"
+    }
+  ]
+}
