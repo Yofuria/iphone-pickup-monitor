@@ -81,6 +81,13 @@ def should_bark_error(error):
     return "HTTP 541" in str(error)
 
 
+def query_backoff(failures, error):
+    if should_bark_error(error):
+        schedule = (30, 60, 120, 300, 900)
+        return max(error.retry_after, schedule[min(max(failures, 1) - 1, len(schedule) - 1)])
+    return backoff(failures, error.retry_after)
+
+
 def load_config(path):
     config = json.loads(path.read_text(encoding="utf-8"))
     for key in ("location", "city"):
@@ -237,6 +244,26 @@ def find_chromium():
             return candidate
     raise QueryError("未找到 Google Chrome 或 Microsoft Edge，库存未知",
                      reset_session=True)
+
+
+def chromium_user_agent(chrome):
+    try:
+        result = subprocess.run([chrome, "--version"], timeout=5, check=True,
+                                text=True, capture_output=True)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    match = re.search(r"\b(\d+(?:\.\d+){1,3})\b", result.stdout)
+    if not match:
+        return None
+    version = match.group(1)
+    if sys.platform == "darwin":
+        platform = "Macintosh; Intel Mac OS X 10_15_7"
+    elif sys.platform.startswith("win"):
+        platform = "Windows NT 10.0; Win64; x64"
+    else:
+        platform = "X11; Linux x86_64"
+    return ("Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/%s Safari/537.36" % (platform, version))
 
 
 class DevToolsSocket:
@@ -410,11 +437,11 @@ def decode_browser_payload(value, config, store_id):
     except ValueError:
         raise QueryError("苹果接口 JSON 无法解析，库存未知", reset_session=True) from None
     rows = parse_all_stock(parsed, config)
-    selected = {}
-    for product in products_for(config):
-        key = store_id + "|" + product["part_number"]
-        selected[key] = rows[key]
-    return selected, age
+    stores = parsed.get("body", {}).get("stores", [])
+    covered = {store.get("storeNumber") for store in stores if isinstance(store, dict)}
+    covered.intersection_update(config["stores"])
+    selected = {key: row for key, row in rows.items() if row["store_id"] in covered}
+    return selected, age, covered
 
 
 class ChromiumSession:
@@ -438,10 +465,12 @@ class ChromiumSession:
         self.profile = tempfile.TemporaryDirectory(prefix="apple-monitor-chromium-")
         args = [chrome, "--headless=new", "--remote-debugging-port=0",
                 "--remote-allow-origins=http://127.0.0.1", "--user-data-dir=" + self.profile.name,
-                "--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
                 "--disable-blink-features=AutomationControlled", "--no-first-run",
                 "--no-default-browser-check", "--disable-background-networking", "--disable-sync",
                 "--disable-default-apps", "--disable-extensions", "about:blank"]
+        user_agent = chromium_user_agent(chrome)
+        if user_agent:
+            args.insert(5, "--user-agent=" + user_agent)
         self.process = subprocess.Popen(args, stdin=subprocess.DEVNULL,
                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         port_file = Path(self.profile.name) / "DevToolsActivePort"
@@ -565,13 +594,20 @@ class AppleClient:
         try:
             rows = {}
             ages = []
+            pending = set(self.config["stores"])
+            request_count = 0
             for store_id in self.config["stores"]:
-                store_rows, age = self.session.fetch_store(store_id)
+                if store_id not in pending:
+                    continue
+                store_rows, age, covered = self.session.fetch_store(store_id)
+                request_count += 1
                 rows.update(store_rows)
                 ages.append(age)
+                pending.difference_update(covered)
             expected = len(products_for(self.config)) * len(self.config["stores"])
             if len(rows) != expected:
                 raise QueryError("浏览器库存响应不完整，库存未知", reset_session=True)
+            self.last_request_count = request_count
             return rows, round((time.monotonic() - started) * 1000), max(ages, default=0)
         except QueryError as exc:
             if exc.reset_session:
@@ -820,6 +856,16 @@ def monitor(config, once=False, silent=False, count=None):
         # A restart must not discard an active server/API cooldown.
         try:
             previous = json.loads((runtime / "status.json").read_text())
+            previous_health = previous.get("health")
+            if previous_health in ("ok", "partial", "error"):
+                health = previous_health
+            last_success = previous.get("last_success") or last_success
+            saved_failures = previous.get("failure_count")
+            if isinstance(saved_failures, int) and not isinstance(saved_failures, bool) and saved_failures >= 0:
+                failures = saved_failures
+            elif previous_health == "error":
+                # Older status files did not persist the count; preserve a conservative cooldown.
+                failures = 4
             if previous.get("health") == "error":
                 due = dt.datetime.fromisoformat(previous["checked_at"]).timestamp() + previous.get("retry_seconds", 0)
                 remaining = max(0, due - time.time())
@@ -854,10 +900,13 @@ def monitor(config, once=False, silent=False, count=None):
                     "pid": os.getpid(), "city": config["city"],
                     "store_count": len(config["stores"]), "product_count": product_count,
                     "combination_count": len(rows),
+                    "failure_count": 0,
                     "query_backend": "chromium", "request_ms": elapsed_ms,
+                    "request_count": client.last_request_count,
                     "cache_age_seconds": age, "stores": rows})
                 if rows != previous_rows or time.monotonic() - heartbeat >= 60 or once or count:
-                    log("查询耗时 %sms，状态 %s，缓存 Age=%ss" % (elapsed_ms, health, age))
+                    log("查询耗时 %sms，请求 %s 次，状态 %s，缓存 Age=%ss" %
+                        (elapsed_ms, client.last_request_count, health, age))
                     for product in products_for(config):
                         group = [r for r in rows.values() if r["part_number"] == product["part_number"]]
                         counts = {value: sum(r["available"] is value for r in group)
@@ -874,14 +923,15 @@ def monitor(config, once=False, silent=False, count=None):
                 delay = max(0, config["interval_seconds"] - (time.monotonic() - started))
             except QueryError as exc:
                 failures += 1
-                delay = backoff(failures, exc.retry_after)
+                delay = query_backoff(failures, exc)
                 log("%s；%.1f 秒后重试" % (exc, delay))
                 write_status(runtime / "status.json", {
                     "health": "error", "checked_at": checked_at, "last_success": last_success,
                     "pid": os.getpid(), "city": config["city"],
                     "store_count": len(config["stores"]), "product_count": product_count,
                     "query_backend": "chromium",
-                    "error": str(exc), "retry_seconds": delay, "stores": {}})
+                    "error": str(exc), "retry_seconds": delay,
+                    "failure_count": failures, "stores": {}})
                 if health != "error" and notify:
                     notify.send("库存监控暂时异常", str(exc) + "；程序将自动退避重试。",
                                 include_bark=should_bark_error(exc))

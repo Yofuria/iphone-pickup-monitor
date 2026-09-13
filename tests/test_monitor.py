@@ -52,6 +52,15 @@ class StockTests(unittest.TestCase):
         with patch.object(m.sys, "platform", "linux"), patch.object(m.shutil, "which", side_effect=which):
             self.assertEqual(m.find_chromium(), "/usr/bin/google-chrome")
 
+    @patch("monitor.subprocess.run")
+    def test_chromium_user_agent_matches_binary_and_platform(self, run):
+        run.return_value.stdout = "Google Chrome 146.0.7680.153\n"
+        with patch.object(m.sys, "platform", "linux"):
+            user_agent = m.chromium_user_agent("/usr/bin/google-chrome")
+        self.assertIn("X11; Linux x86_64", user_agent)
+        self.assertIn("Chrome/146.0.7680.153", user_agent)
+        self.assertNotIn("HeadlessChrome", user_agent)
+
     def rows(self):
         return m.parse_stock(self.payload, self.config)
 
@@ -132,6 +141,14 @@ class StockTests(unittest.TestCase):
                 m.decode_browser_payload({"status": 200, "body": body, "age": age},
                                          self.config, "R448")
 
+    def test_one_response_covers_all_returned_target_stores(self):
+        rows, age, covered = m.decode_browser_payload(
+            {"status": 200, "body": json.dumps(self.payload), "age": "0"},
+            self.config, "R448")
+        self.assertEqual(age, 0)
+        self.assertEqual(covered, set(self.config["stores"]))
+        self.assertEqual(len(rows), len(self.config["stores"]))
+
     def test_inventory_request_contains_browser_handshake_parameters(self):
         request = m.browser_inventory_request(self.config, "R448")
         self.assertEqual(request["url"], "https://www.apple.com.cn/shop/retail/pickup-message")
@@ -149,6 +166,13 @@ class StockTests(unittest.TestCase):
         self.assertGreater(m.retry_seconds(email.utils.format_datetime(future)), 598)
         self.assertEqual(m.backoff(1000), 300)
         self.assertEqual(m.retry_seconds("nonsense"), 0)
+
+    def test_sustained_541_uses_long_cooldown(self):
+        blocked = m.QueryError("苹果接口 HTTP 541，库存未知")
+        self.assertEqual([m.query_backoff(i, blocked) for i in range(1, 7)],
+                         [30, 60, 120, 300, 900, 900])
+        ordinary = m.QueryError("临时网络错误")
+        self.assertEqual(m.query_backoff(4, ordinary), 240)
 
     def test_bark_validation(self):
         self.assertEqual(m.validate_bark("https://api.day.app/example/"), "https://api.day.app/example")
@@ -285,19 +309,31 @@ class MultiProductTests(unittest.TestCase):
         self.assertEqual(set(parts), {p["part_number"] for p in self.config["products"]})
 
     @patch("monitor.ChromiumSession")
-    def test_client_reuses_one_chrome_session_across_six_stores(self, session_type):
+    def test_client_uses_one_request_when_response_covers_all_stores(self, session_type):
         fixture_rows = self.rows()
         session = session_type.return_value
-        session.fetch_store.side_effect = [
-            ({key: value for key, value in fixture_rows.items() if key.startswith(store + "|")}, 0)
-            for store in self.config["stores"]
-        ]
+        session.fetch_store.return_value = (fixture_rows, 0, set(self.config["stores"]))
         client = m.AppleClient(self.config)
         rows, _, age = client.query()
         self.assertEqual(len(rows), 84)
         self.assertEqual(age, 0)
-        self.assertEqual(session.fetch_store.call_count, 6)
+        self.assertEqual(session.fetch_store.call_count, 1)
+        self.assertEqual(client.last_request_count, 1)
         session_type.assert_called_once_with(self.config)
+
+    @patch("monitor.ChromiumSession")
+    def test_client_falls_back_for_stores_missing_from_responses(self, session_type):
+        fixture_rows = self.rows()
+        session = session_type.return_value
+        session.fetch_store.side_effect = [
+            ({key: value for key, value in fixture_rows.items() if key.startswith(store + "|")},
+             0, {store}) for store in self.config["stores"]
+        ]
+        client = m.AppleClient(self.config)
+        rows, _, _ = client.query()
+        self.assertEqual(len(rows), 84)
+        self.assertEqual(session.fetch_store.call_count, 6)
+        self.assertEqual(client.last_request_count, 6)
 
     def test_duplicate_sku_and_empty_products_rejected(self):
         for products in ([], [self.config["products"][0]] * 2):
