@@ -76,6 +76,11 @@ def backoff(failures, retry_after=0):
     return max(retry_after, min(300, 15 * 2 ** min(failures, 5)))
 
 
+def should_bark_error(error):
+    """Only HTTP 541 is actionable enough to send as an error push."""
+    return "HTTP 541" in str(error)
+
+
 def load_config(path):
     config = json.loads(path.read_text(encoding="utf-8"))
     for key in ("location", "city"):
@@ -879,7 +884,7 @@ def monitor(config, once=False, silent=False, count=None):
                     "error": str(exc), "retry_seconds": delay, "stores": {}})
                 if health != "error" and notify:
                     notify.send("库存监控暂时异常", str(exc) + "；程序将自动退避重试。",
-                                include_bark=False)
+                                include_bark=should_bark_error(exc))
                 health = "error"
                 exit_code = 2
             loops += 1

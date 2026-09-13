@@ -195,6 +195,11 @@ class StockTests(unittest.TestCase):
         desktop.put_nowait.assert_called_once()
         bark.put_nowait.assert_not_called()
 
+    def test_only_http_541_errors_enable_bark(self):
+        self.assertTrue(m.should_bark_error(m.QueryError("苹果接口 HTTP 541，库存未知")))
+        self.assertFalse(m.should_bark_error(m.QueryError("苹果接口 HTTP 403，库存未知")))
+        self.assertFalse(m.should_bark_error(m.QueryError("Apple 页面未能完成风控握手")))
+
     @patch("monitor.log")
     def test_recovery_still_reaches_bark_queue(self, _):
         notification = m.Notifications.__new__(m.Notifications)
