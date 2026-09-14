@@ -146,9 +146,11 @@ def load_config(path):
         config[key] = value.strip()
     for key, low, high in (("interval_seconds", 30, 3600),
                            ("timeout_seconds", 1, 60),
-                           ("max_cache_age_seconds", 0, 300)):
+                           ("max_cache_age_seconds", 0, 300),
+                           ("out_of_stock_notification_seconds", 0, 604800)):
         number = float(config.get(key, {"interval_seconds": 30, "timeout_seconds": 60,
-                                       "max_cache_age_seconds": 30}[key]))
+                                       "max_cache_age_seconds": 30,
+                                       "out_of_stock_notification_seconds": 0}[key]))
         if not math.isfinite(number) or not low <= number <= high:
             raise ValueError("%s 必须介于 %s 和 %s" % (key, low, high))
         config[key] = number
@@ -638,6 +640,67 @@ class Changes:
         return alerts
 
 
+class OutOfStockTracker:
+    """Track one continuous, fully known all-out-of-stock period across restarts."""
+    def __init__(self, threshold_seconds):
+        self.threshold_seconds = threshold_seconds
+        self.since = None
+        self.notified = False
+
+    @staticmethod
+    def all_out(rows):
+        return (isinstance(rows, dict) and bool(rows)
+                and all(isinstance(row, dict) and row.get("available") is False
+                        for row in rows.values()))
+
+    def reset(self):
+        self.since = None
+        self.notified = False
+
+    def restore(self, status):
+        if (not self.threshold_seconds or status.get("health") != "ok"
+                or not self.all_out(status.get("stores", {}))):
+            return
+        since = status.get("out_of_stock_since")
+        try:
+            dt.datetime.fromisoformat(since)
+        except (TypeError, ValueError):
+            return
+        self.since = since
+        self.notified = status.get("out_of_stock_notified") is True
+
+    def update(self, rows, checked_at):
+        if not self.threshold_seconds or not self.all_out(rows):
+            self.reset()
+            return False
+        new_period = self.since is None
+        try:
+            now = dt.datetime.fromisoformat(checked_at)
+            started = dt.datetime.fromisoformat(self.since) if self.since else now
+            elapsed = (now - started).total_seconds()
+        except (TypeError, ValueError):
+            self.reset()
+            return False
+        if new_period or elapsed < 0:
+            self.since = checked_at
+            self.notified = False
+            return False
+        return not self.notified and elapsed >= self.threshold_seconds
+
+    def mark_notified(self):
+        self.notified = True
+
+    def status_fields(self):
+        return {"out_of_stock_since": self.since,
+                "out_of_stock_notified": self.notified}
+
+
+def duration_label(seconds):
+    if seconds % 60 == 0:
+        return "%g 分钟" % (seconds / 60)
+    return "%g 秒" % seconds
+
+
 def validate_bark(value):
     parsed = urllib.parse.urlsplit(value.strip())
     if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
@@ -842,6 +905,7 @@ def monitor(config, once=False, silent=False, count=None):
     elif len(barks) > 1 and not silent:
         log("Bark 已配置 %s 台设备。" % len(barks))
     changes = Changes()
+    out_of_stock = OutOfStockTracker(config["out_of_stock_notification_seconds"])
     failures = 0
     health = "starting"
     last_success = None
@@ -858,6 +922,7 @@ def monitor(config, once=False, silent=False, count=None):
         # A restart must not discard an active server/API cooldown.
         try:
             previous = json.loads((runtime / "status.json").read_text())
+            out_of_stock.restore(previous)
             previous_health = previous.get("health")
             if previous_health in ("ok", "partial", "error"):
                 health = previous_health
@@ -897,6 +962,14 @@ def monitor(config, once=False, silent=False, count=None):
                 if alerts and notify:
                     for title, body, url in stock_alerts(alerts, checked_at, config):
                         notify.send(title, body, url)
+                if out_of_stock.update(rows, checked_at) and notify:
+                    notify.send(
+                        config["city"] + " Apple Store 暂无自提库存",
+                        "连续 %s 查询到全部 %s 个型号/门店组合均不可自提。\n检测时间：%s" %
+                        (duration_label(config["out_of_stock_notification_seconds"]),
+                         len(rows), checked_at),
+                        config["storefront_url"] + "/shop/buy-iphone")
+                    out_of_stock.mark_notified()
                 write_status(runtime / "status.json", {
                     "health": health, "checked_at": checked_at, "last_success": last_success,
                     "pid": os.getpid(), "city": config["city"],
@@ -905,7 +978,8 @@ def monitor(config, once=False, silent=False, count=None):
                     "failure_count": 0,
                     "query_backend": "chromium", "request_ms": elapsed_ms,
                     "request_count": client.last_request_count,
-                    "cache_age_seconds": age, "stores": rows})
+                    "cache_age_seconds": age, "stores": rows,
+                    **out_of_stock.status_fields()})
                 if rows != previous_rows or time.monotonic() - heartbeat >= 60 or once or count:
                     log("查询耗时 %sms，请求 %s 次，状态 %s，缓存 Age=%ss" %
                         (elapsed_ms, client.last_request_count, health, age))
@@ -924,6 +998,7 @@ def monitor(config, once=False, silent=False, count=None):
                 # Start-to-start schedule, no overlapping requests and no catch-up burst.
                 delay = max(0, config["interval_seconds"] - (time.monotonic() - started))
             except QueryError as exc:
+                out_of_stock.reset()
                 failures += 1
                 delay = query_backoff(failures, exc)
                 log("%s；%.1f 秒后重试" % (exc, delay))
@@ -933,7 +1008,8 @@ def monitor(config, once=False, silent=False, count=None):
                     "store_count": len(config["stores"]), "product_count": product_count,
                     "query_backend": "chromium",
                     "error": str(exc), "retry_seconds": delay,
-                    "failure_count": failures, "stores": {}})
+                    "failure_count": failures, "stores": {},
+                    **out_of_stock.status_fields()})
                 if health != "error" and notify:
                     notify.send("库存监控暂时异常", str(exc) + "；程序将自动退避重试。",
                                 include_bark=should_bark_error(exc))

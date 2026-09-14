@@ -7,6 +7,7 @@
   "interval_seconds": 30,
   "timeout_seconds": 60,
   "max_cache_age_seconds": 30,
+  "out_of_stock_notification_seconds": 600,
   "desktop_notifications": true,
   "sound": true,
   "alert_title": "上海 Apple Store 自提有货",

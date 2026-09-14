@@ -78,6 +78,7 @@ python3 monitor.py --config /path/to/my-config.json
   "interval_seconds": 30,
   "timeout_seconds": 60,
   "max_cache_age_seconds": 30,
+  "out_of_stock_notification_seconds": 600,
   "desktop_notifications": true,
   "sound": true,
   "alert_title": "上海 Apple Store 自提有货",
@@ -101,6 +102,7 @@ python3 monitor.py --config /path/to/my-config.json
 | `interval_seconds` | 否 | 完整轮次的开始间隔，默认及最小值为 30 秒，最大 3600 秒。 |
 | `timeout_seconds` | 否 | 单次网络操作超时，默认 60 秒，可设为 1～60 秒。 |
 | `max_cache_age_seconds` | 否 | 可接受的响应缓存年龄，默认 30 秒，可设为 0～300 秒。 |
+| `out_of_stock_notification_seconds` | 否 | 全部目标组合连续明确无货多久后提醒一次，单位为秒；默认 `0`（关闭），最大 604800 秒。设为 `600` 即连续无货 10 分钟后提醒。 |
 | `desktop_notifications` | 否 | 是否显示桌面通知，默认 `true`。 |
 | `sound` | 否 | 是否播放电脑提示音，默认 `true`。 |
 | `alert_title` | 否 | 有货通知标题；默认根据 `city` 生成。 |
@@ -118,7 +120,7 @@ Bark 基础地址格式为 `https://api.day.app/你的Key`，也支持 HTTPS 自
 
 地址每行一个，保存在 `.bark-url`；文件权限仅允许当前用户读写。也可以使用环境变量 `BARK_URLS` 提供英文逗号分隔的多个地址，单设备环境变量 `BARK_URL` 仍兼容。修改地址后需要重启正在运行的监控。
 
-同一轮中，同型号有货的多家门店会合并为一条通知，不同型号分开发送。通知包含型号、门店、自提说明和检测时间，点击后打开对应 Apple 商品页。每台 Bark 设备使用独立发送队列，一台失败不会阻塞其他设备或库存查询。
+同一轮中，同型号有货的多家门店会合并为一条通知，不同型号分开发送。通知包含型号、门店、自提说明和检测时间，点击后打开对应 Apple 商品页。设置 `out_of_stock_notification_seconds` 后，全部目标组合连续明确无货达到指定时间会提醒一次；出现有货、未知状态或查询异常后重新计时。计时和是否已提醒会写入状态文件，服务重启不会重复提醒。每台 Bark 设备使用独立发送队列，一台失败不会阻塞其他设备或库存查询。
 
 ## 延迟与可靠性
 
@@ -131,7 +133,7 @@ Bark 基础地址格式为 `https://api.day.app/你的Key`，也支持 HTTPS 自
 
 ## 状态、日志和命令
 
-`runtime/status.json` 保存最新健康状态、城市、门店数、型号数、组合数、进程 PID、检查时间、请求耗时、缓存年龄和各组合结果。`runtime/monitor.log` 保存轮换日志，`runtime/launcher.log` 保存后台启动输出。
+`runtime/status.json` 保存最新健康状态、城市、门店数、型号数、组合数、进程 PID、检查时间、请求耗时、缓存年龄、连续无库存计时和各组合结果。`runtime/monitor.log` 保存轮换日志，`runtime/launcher.log` 保存后台启动输出。
 
 ```sh
 # 离线校验配置

@@ -126,6 +126,32 @@ class StockTests(unittest.TestCase):
         self.part()["pickupDisplay"] = "available"
         self.assertEqual(len(m.Changes().update(self.rows())), 1)
 
+    def test_out_of_stock_tracker_waits_deduplicates_and_resets(self):
+        rows = self.rows()
+        tracker = m.OutOfStockTracker(600)
+        self.assertFalse(tracker.update(rows, "2026-09-14T08:00:00+08:00"))
+        self.assertFalse(tracker.update(rows, "2026-09-14T08:09:59+08:00"))
+        self.assertTrue(tracker.update(rows, "2026-09-14T08:10:00+08:00"))
+        tracker.mark_notified()
+        self.assertFalse(tracker.update(rows, "2026-09-14T08:20:00+08:00"))
+        rows["R448"]["available"] = None
+        self.assertFalse(tracker.update(rows, "2026-09-14T08:20:30+08:00"))
+        rows["R448"]["available"] = False
+        self.assertFalse(tracker.update(rows, "2026-09-14T08:21:00+08:00"))
+        self.assertTrue(tracker.update(rows, "2026-09-14T08:31:00+08:00"))
+
+    def test_out_of_stock_tracker_restores_persisted_period(self):
+        rows = self.rows()
+        tracker = m.OutOfStockTracker(600)
+        tracker.restore({"health": "ok", "stores": rows,
+                         "out_of_stock_since": "2026-09-14T08:00:00+08:00",
+                         "out_of_stock_notified": False})
+        self.assertTrue(tracker.update(rows, "2026-09-14T08:10:00+08:00"))
+        tracker.mark_notified()
+        self.assertEqual(tracker.status_fields(), {
+            "out_of_stock_since": "2026-09-14T08:00:00+08:00",
+            "out_of_stock_notified": True})
+
     def test_browser_payload_rate_limit_and_block(self):
         for status, retry, reset in ((429, 600, False), (541, 0, True), (403, 0, True)):
             with self.subTest(status=status), self.assertRaises(m.QueryError) as caught:
@@ -372,6 +398,8 @@ class MultiProductTests(unittest.TestCase):
         self.assertEqual(example["city"], "上海")
         self.assertEqual(len(example["stores"]), 1)
         self.assertEqual(len(example["products"]), 1)
+        self.assertEqual(example["out_of_stock_notification_seconds"], 600)
+        self.assertEqual(self.config["out_of_stock_notification_seconds"], 0)
 
     def test_legacy_single_config_still_works(self):
         legacy = {k: v for k, v in self.config.items() if k != "products"}
