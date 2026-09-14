@@ -161,6 +161,11 @@ class StockTests(unittest.TestCase):
         self.assertIn("credentials:'same-origin'", expression)
         self.assertIn("X-Requested-With", expression)
 
+    def test_inventory_request_uses_location_without_store_anchor(self):
+        request = m.browser_inventory_request(self.config)
+        self.assertEqual(request["pairs"][-1], ("location", "100000"))
+        self.assertNotIn("store", {key for key, _ in request["pairs"]})
+
     def test_retry_after_http_date_and_backoff_cap(self):
         future = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=600)
         self.assertGreater(m.retry_seconds(email.utils.format_datetime(future)), 598)
@@ -318,6 +323,7 @@ class MultiProductTests(unittest.TestCase):
         self.assertEqual(len(rows), 84)
         self.assertEqual(age, 0)
         self.assertEqual(session.fetch_store.call_count, 1)
+        session.fetch_store.assert_called_once_with()
         self.assertEqual(client.last_request_count, 1)
         session_type.assert_called_once_with(self.config)
 
@@ -333,6 +339,7 @@ class MultiProductTests(unittest.TestCase):
         rows, _, _ = client.query()
         self.assertEqual(len(rows), 84)
         self.assertEqual(session.fetch_store.call_count, 6)
+        self.assertEqual(session.fetch_store.call_args_list[0].args, ())
         self.assertEqual(client.last_request_count, 6)
 
     def test_duplicate_sku_and_empty_products_rejected(self):

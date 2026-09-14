@@ -389,11 +389,11 @@ class DevToolsSocket:
                 pass
 
 
-def browser_inventory_request(config, store_id):
+def browser_inventory_request(config, store_id=None):
     pairs = [("fae", "true"), ("pl", "true"), ("mts.0", "regular")]
     pairs.extend(("parts.%d" % index, product["part_number"])
                  for index, product in enumerate(products_for(config)))
-    pairs.append(("store", store_id))
+    pairs.append(("store", store_id) if store_id else ("location", config["location"]))
     return {"url": config["storefront_url"] + ENDPOINT,
             "pairs": pairs, "max_bytes": 4 * 1024 * 1024}
 
@@ -545,7 +545,7 @@ class ChromiumSession:
             time.sleep(0.25)
         raise QueryError("Apple 页面未能完成风控握手，库存未知", reset_session=True)
 
-    def fetch_store(self, store_id):
+    def fetch_store(self, store_id=None):
         self.ensure_ready()
         if self.last_request is not None:
             remaining = self.MIN_REQUEST_INTERVAL - (time.monotonic() - self.last_request)
@@ -593,10 +593,11 @@ class AppleClient:
         if self.session is None:
             self.session = ChromiumSession(self.config)
         try:
-            rows = {}
-            ages = []
+            rows, age, covered = self.session.fetch_store()
+            ages = [age]
             pending = set(self.config["stores"])
-            request_count = 0
+            pending.difference_update(covered)
+            request_count = 1
             for store_id in self.config["stores"]:
                 if store_id not in pending:
                     continue
